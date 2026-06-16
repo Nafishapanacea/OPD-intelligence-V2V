@@ -1,39 +1,74 @@
+"""
+Gemini API service with retry logic and connection pooling.
+Handles answer validation and medical summary generation.
+"""
 import json
 import logging
+import asyncio
+from typing import Optional
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, GEMINI_TIMEOUT_S, GEMINI_MAX_RETRIES, GEMINI_RETRY_DELAY_MS
+from app.retry.decorators import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
+
 class GeminiService:
+    """Service for Gemini API interactions with built-in retry logic."""
+    
+    _instance = None
+    _client = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
     def __init__(self):
+        if self._initialized:
+            return
+        
         self.api_key = GEMINI_API_KEY
+        self._lock = asyncio.Lock()
+        
         if self.api_key:
-            # Initialize the Google GenAI client
-            self.client = genai.Client(api_key=self.api_key)
+            try:
+                # Initialize the Google GenAI client with connection pooling
+                self.client = genai.Client(api_key=self.api_key)
+                logger.info("Gemini API client initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Gemini client: {e}. Running in MOCK mode.")
+                self.client = None
         else:
             self.client = None
             logger.warning(
                 "GEMINI_API_KEY is not set in backend/.env. Running Gemini Service in MOCK mode."
             )
-
-    def evaluate_answer(self, question: str, answer: str) -> str:
+        
+        self._initialized = True
+    
+    @retry_with_backoff(
+        max_retries=GEMINI_MAX_RETRIES,
+        initial_delay_ms=GEMINI_RETRY_DELAY_MS,
+        max_delay_ms=5000,
+        backoff_factor=2.0,
+        jitter=True,
+        exceptions=(APIError, asyncio.TimeoutError, Exception)
+    )
+    async def evaluate_answer(self, question: str, answer: str) -> str:
         """
         Determines whether the user's answer is clear/valid ("Next")
-        or if the question should be repeated ("Repeat").
+        or if the question should be repeated.
+        Async version with retry logic.
         """
         # If API key is missing or blank, use mock logic
         if not self.client:
-            logger.info("Gemini Service in Mock Mode: Evaluating answer.")
-            # Basic validation: if answer has at least one alphanumeric character, pass it.
-            # If empty or asking to repeat, repeat the question.
-            sanitized_ans = answer.strip().lower()
-            if not sanitized_ans or "repeat" in sanitized_ans or "clear" in sanitized_ans or len(sanitized_ans) < 2:
-                return question
-            return "Next"
-
+            logger.debug("Gemini Service in Mock Mode: Evaluating answer.")
+            return self._evaluate_answer_mock(question, answer)
+        
         prompt = f"""
 Analyze the user's answer to the given medical intake question.
 Question: "{question}"
@@ -47,19 +82,29 @@ STRICT RULES:
 - Output ONLY the word "Next" OR the exact question.
 - No punctuation, no markdown, no explanations.
 """
+        
         try:
-            response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    max_output_tokens=50
-                )
+            # Run in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            max_output_tokens=50
+                        )
+                    )
+                ),
+                timeout=GEMINI_TIMEOUT_S
             )
-            result = response.text.strip()
-            logger.info(f"Gemini Decision Output: '{result}' for question '{question}' and answer '{answer}'")
             
-            # Sanitization of response: trim quotes if Gemini added any
+            result = response.text.strip()
+            logger.debug(f"Gemini Decision: '{result}' for Q: '{question[:50]}...'")
+            
+            # Sanitization: trim quotes if Gemini added any
             result_cleaned = result.replace('"', '').replace("'", "").strip()
             
             # Strict validation
@@ -69,30 +114,31 @@ STRICT RULES:
             # If it's not "Next", return the original question to repeat
             return question
             
+        except asyncio.TimeoutError:
+            logger.error(f"Gemini API timeout after {GEMINI_TIMEOUT_S}s")
+            raise
         except Exception as e:
-            logger.error(f"Error calling Gemini for answer evaluation: {e}. Falling back to 'Next' if answer has content.")
-            if len(answer.strip()) > 1:
-                return "Next"
-            return question
-
-    def generate_medical_summaries(self, history: list) -> dict:
+            logger.error(f"Error calling Gemini for answer evaluation: {e}")
+            raise
+    
+    @retry_with_backoff(
+        max_retries=GEMINI_MAX_RETRIES,
+        initial_delay_ms=GEMINI_RETRY_DELAY_MS,
+        max_delay_ms=5000,
+        backoff_factor=2.0,
+        jitter=True,
+        exceptions=(APIError, asyncio.TimeoutError, Exception)
+    )
+    async def generate_medical_summaries(self, history: list) -> dict:
         """
-        Generates clinical summaries in English, Hindi, and Marathi based on the session's Q&A history.
-        history is a list of dicts: [{"question": str, "answer": str}]
+        Generates clinical summaries in English, Hindi, and Marathi based on Q&A history.
+        Async version with retry logic.
         """
         history_str = "\n".join([f"Q: {item['question']}\nA: {item['answer']}" for item in history])
 
         if not self.client:
-            logger.info("Gemini Service in Mock Mode: Generating summaries.")
-            # Return basic mock summaries using the history
-            summary_en = f"Patient pre-consultation OPD history collection complete. Key points reported: " + ", ".join([f"{h['question']}: {h['answer']}" for h in history])
-            summary_hi = f"मरीज का ओपीडी इतिहास संग्रह पूरा हो गया है। विवरण: " + ", ".join([f"{h['question']}: {h['answer']}" for h in history])
-            summary_mr = f"रुग्णाचा ओपीडी इतिहास संग्रह पूर्ण झाला आहे. तपशील: " + ", ".join([f"{h['question']}: {h['answer']}" for h in history])
-            return {
-                "english_summary": summary_en,
-                "hindi_summary": summary_hi,
-                "marathi_summary": summary_mr
-            }
+            logger.debug("Gemini Service in Mock Mode: Generating summaries.")
+            return self._generate_medical_summaries_mock(history)
 
         prompt = f"""
 You are a medical scribe. Summarize the patient's OPD intake pre-consultation responses.
@@ -112,13 +158,20 @@ Return a JSON object matching this exact structure:
 """
 
         try:
-            response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1
-                )
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.1
+                        )
+                    )
+                ),
+                timeout=GEMINI_TIMEOUT_S
             )
             
             # Parse the JSON response
@@ -129,11 +182,45 @@ Return a JSON object matching this exact structure:
                 "marathi_summary": data.get("marathi_summary", "कोणताही मराठी सारांश उपलब्ध नाही.")
             }
             
+        except asyncio.TimeoutError:
+            logger.error(f"Gemini summary generation timeout after {GEMINI_TIMEOUT_S}s")
+            raise
         except Exception as e:
             logger.error(f"Error calling Gemini for summary generation: {e}")
-            # Dynamic fallback
-            return {
-                "english_summary": f"Failed to generate summary via Gemini. Q&A History:\n{history_str}",
-                "hindi_summary": f"जेमिनीद्वारे सारांश तयार करण्यात अयशस्वी. इतिहास:\n{history_str}",
-                "marathi_summary": f"जेमिनीद्वारे सारांश तयार करण्यात अयशस्वी. इतिहास:\n{history_str}"
-            }
+            raise
+    
+    # ============ MOCK IMPLEMENTATIONS ============
+    @staticmethod
+    def _evaluate_answer_mock(question: str, answer: str) -> str:
+        """Mock answer evaluation."""
+        sanitized_ans = answer.strip().lower()
+        confusion_keywords = [
+            "repeat", "clear", "dont understand", "don't understand",
+            "dont know", "don't know", "idk", "not sure",
+            "can't hear", "cant hear", "say again", "again",
+            "what", "huh", "unsure"
+        ]
+        has_confusion = any(k in sanitized_ans for k in confusion_keywords)
+        alnum_count = sum(1 for c in sanitized_ans if c.isalnum())
+        
+        if not sanitized_ans or has_confusion or alnum_count < 2:
+            return question
+        return "Next"
+    
+    @staticmethod
+    def _generate_medical_summaries_mock(history: list) -> dict:
+        """Mock summary generation."""
+        summary_en = f"Patient pre-consultation OPD history collection complete. Key points: " + ", ".join([f"{h['question']}: {h['answer']}" for h in history[:3]])
+        summary_hi = f"मरीज का ओपीडी इतिहास पूरा: " + ", ".join([f"{h['question']}: {h['answer']}" for h in history[:3]])
+        summary_mr = f"रुग्णाचा ओपीडी इतिहास पूर्ण: " + ", ".join([f"{h['question']}: {h['answer']}" for h in history[:3]])
+        
+        return {
+            "english_summary": summary_en,
+            "hindi_summary": summary_hi,
+            "marathi_summary": summary_mr
+        }
+
+
+# Singleton instance
+gemini_service = GeminiService()
+
