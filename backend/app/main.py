@@ -182,9 +182,12 @@ async def get_session(
 ):
     """Retrieve full session details with history and summaries."""
     try:
-        # Convert string to UUID
+        # Convert string to UUID - isolate parsing so ValueError is specific
         import uuid as uuid_lib
-        session_uuid = uuid_lib.UUID(session_id)
+        try:
+            session_uuid = uuid_lib.UUID(session_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid session ID format")
         
         query = select(SessionModel).where(SessionModel.id == session_uuid)
         result = await db.execute(query)
@@ -195,8 +198,8 @@ async def get_session(
         
         return SessionDetailResponse.from_orm(db_session)
         
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Failed to get session: {e}")
         raise HTTPException(status_code=500, detail="Database error")

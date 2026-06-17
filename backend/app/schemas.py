@@ -51,7 +51,7 @@ class InteractionDetail(BaseModel):
 
 # ============ SESSION DETAILS ============
 class SessionDetailResponse(BaseModel):
-    id: str
+    id: UUID
     language: str
     status: str = "in_progress"
     english_summary: Optional[str] = None
