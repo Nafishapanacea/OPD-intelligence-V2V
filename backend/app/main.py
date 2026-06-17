@@ -227,11 +227,23 @@ async def submit_answer(
         language = db_session.language
         lang_questions = QUESTIONS.get(language, [])
         
-        # Verify question is valid
-        if request.question not in lang_questions:
+        # Debug: log received vs expected for diagnosis
+        logger.info(f"🔍 submit-answer debug: language='{language}', question repr={repr(request.question)}")
+        logger.info(f"🔍 Expected questions: {[repr(q) for q in lang_questions]}")
+        
+        # Verify question is valid (strip whitespace for robustness)
+        received_q = request.question.strip()
+        matched_question = None
+        for q in lang_questions:
+            if q.strip() == received_q:
+                matched_question = q
+                break
+        
+        if matched_question is None:
+            logger.error(f"❌ Question mismatch! Received: {repr(received_q)}")
             raise HTTPException(status_code=400, detail="Question is not part of this language set")
         
-        current_index = lang_questions.index(request.question)
+        current_index = lang_questions.index(matched_question)
         
         # Call Gemini to evaluate answer (async with retry logic)
         decision = await gemini_service.evaluate_answer(request.question, request.answer)
