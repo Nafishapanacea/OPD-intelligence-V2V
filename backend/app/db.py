@@ -15,13 +15,18 @@ Base = declarative_base()
 # Create async engine with asyncpg for production use
 
 if DATABASE_URL.startswith("sqlite"):
-    # Convert sqlite:// to sqlite+aiosqlite:// for async support
-    async_db_url = DATABASE_URL.replace("sqlite://", "sqlite+aiosqlite:///")
+    if DATABASE_URL.startswith("sqlite+aiosqlite"):
+        async_db_url = DATABASE_URL
+    else:
+        # Convert sqlite:// to sqlite+aiosqlite:// for async support
+        async_db_url = DATABASE_URL.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    logger.info(f"Database: Initializing async SQLite engine with URL: {async_db_url}")
     async_engine = create_async_engine(
         async_db_url,
         echo=True,
     )
 else:
+    logger.info("Database: Initializing async PostgreSQL engine")
     async_engine = create_async_engine(
         DATABASE_URL,
         pool_size=DB_POOL_MIN,
@@ -41,9 +46,12 @@ AsyncSessionLocal = async_sessionmaker(
 # Keep synchronous engine for backward compatibility during migration
 # This will use standard psycopg2 driver instead of asyncpg
 if "sqlite" in DATABASE_URL:
+    # Convert sqlite+aiosqlite:// back to sqlite:// for sync engine compatibility
+    sync_db_url = DATABASE_URL.replace("sqlite+aiosqlite://", "sqlite://", 1)
+    logger.info(f"Database: Initializing sync SQLite engine with URL: {sync_db_url}")
     # SQLite for development/testing
     connect_args = {"check_same_thread": False}
-    sync_engine = create_engine(DATABASE_URL, connect_args=connect_args)
+    sync_engine = create_engine(sync_db_url, connect_args=connect_args)
 else:
     # PostgreSQL synchronous for backward compatibility
     # Convert asyncpg URL to psycopg2 URL

@@ -51,13 +51,17 @@ class TTSService:
     @staticmethod
     def _reference_path(language: str) -> str:
         """Return the absolute path to the reference audio for the given language."""
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        ref_dir = os.path.abspath(os.path.join(current_dir, "..", "reference_audio"))
+        
         lang = language.lower()
         if "hindi" in lang:
-            return "/home/omen/Documents/Nafisha/OPD-intelligence-V2V/backend/app/reference_audio/hindi_ref.mp3"
+            return os.path.join(ref_dir, "hindi_ref.mp3")
         if "marathi" in lang:
-            return "/home/omen/Documents/Nafisha/OPD-intelligence-V2V/backend/app/reference_audio/marathi_ref.wav"
+            return os.path.join(ref_dir, "marathi_ref.wav")
         # Default to English reference
-        return "/home/omen/Documents/Nafisha/OPD-intelligence-V2V/backend/app/reference_audio/eng_ref.mp3"
+        return os.path.join(ref_dir, "eng_ref.mp3")
 
     @staticmethod
     def generate_speech(text: str, language: str) -> tuple:

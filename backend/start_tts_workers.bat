@@ -31,25 +31,17 @@ if errorlevel 1 (
 )
 
 echo.
-echo Starting 5 TTS Workers...
+echo Starting 4 Optimized TTS Workers...
 echo.
 
 REM Start workers in separate command windows
-for /L %%i in (1,1,5) do (
-    echo [TTS Worker %%i] Starting...
-    set MAX_CONCURRENT=1
-    if %%i equ 1 set MAX_CONCURRENT=2
-    if %%i equ 2 set MAX_CONCURRENT=2
-    if %%i equ 3 set MAX_CONCURRENT=1
-    if %%i equ 4 set MAX_CONCURRENT=1
-    if %%i equ 5 set MAX_CONCURRENT=1
-    
-    REM Calculate total: 2+2+1+1+1 = 7, but limited by semaphore to 5 total concurrent
-    start "TTS-Worker-%%i" python -m app.workers.tts_worker
+for /L %%i in (1,1,4) do (
+    echo [TTS Worker %%i] Starting with MAX_CONCURRENT=2...
+    start "TTS-Worker-%%i" cmd /c "set WORKER_ID=%%i&& set MAX_CONCURRENT=2&& python -m app.workers.tts_worker"
 )
 
 echo.
-echo ✅ All 5 TTS workers started in background windows
+echo ✅ All 4 TTS workers started in background windows
 echo.
 echo To monitor workers:
 echo   - Each window shows worker logs in real-time
