@@ -39,7 +39,7 @@ class Interaction(Base):
     """Question-answer pair for a session."""
     __tablename__ = "interactions"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     language = Column(String(50), nullable=False)
     question = Column(Text, nullable=False)
@@ -70,7 +70,7 @@ class TTSCache(Base):
     """Cache for frequently requested TTS audio."""
     __tablename__ = "tts_cache"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(Text, nullable=False)
     language = Column(String(50), nullable=False)
     audio_hash = Column(String(64), nullable=False, unique=True, index=True)  # SHA256
@@ -89,7 +89,7 @@ class AuditLog(Base):
     """Audit log for detecting concurrent access issues."""
     __tablename__ = "audit_log"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True)
     interaction_id = Column(BigInteger, ForeignKey("interactions.id", ondelete="SET NULL"), nullable=True)
     action = Column(String(50), nullable=False)  # update, delete, concurrent_conflict

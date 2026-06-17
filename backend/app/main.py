@@ -397,7 +397,7 @@ async def request_tts(request: TTSRequestSchema):
         )
         
         # Push to Redis queue
-        await RedisClient.push_task("tts_tasks", task.dict())
+        await RedisClient.push_task("tts_tasks", task.model_dump(mode='json'))
         
         logger.info(f"✅ TTS task queued: {task_id} (queue_depth: {queue_depth})")
         

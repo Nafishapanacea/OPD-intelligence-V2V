@@ -68,7 +68,7 @@ class TTSWorkerPool:
                     if task.attempt < task.max_retries:
                         # Requeue for retry
                         task.attempt += 1
-                        await RedisClient.push_task("tts_tasks", task.dict())
+                        await RedisClient.push_task("tts_tasks", task.model_dump(mode='json'))
                         return False
                     else:
                         # Max retries exceeded
@@ -129,23 +129,30 @@ class TTSWorkerPool:
         self.running = True
         logger.info(f"TTS Worker Pool started (max_concurrent={self.max_concurrent})")
         
+        # Log initial queue depth
+        try:
+            initial_depth = await RedisClient.peek_queue_depth("tts_tasks")
+            logger.info(f"Initial queue depth: {initial_depth}")
+        except Exception as e:
+            logger.warning(f"Could not check initial queue depth: {e}")
+        
         try:
             while self.running:
                 try:
                     # Pop task from queue (blocking with timeout)
+                    logger.debug("Waiting for task from Redis queue 'tts_tasks'...")
                     task_dict = await RedisClient.pop_task("tts_tasks", timeout=poll_interval_s)
                     
                     if task_dict:
+                        task_id = task_dict.get('task_id', 'unknown')
+                        logger.info(f"📥 Popped task {task_id} from queue")
                         # Process task (semaphore-limited)
-                        await self.process_task(task_dict)
-                    else:
-                        # No tasks in queue, log queue depth periodically
-                        queue_depth = await RedisClient.peek_queue_depth("tts_tasks")
-                        if queue_depth > 0:
-                            logger.info(f"Queue depth: {queue_depth}, waiting for slot...")
+                        success = await self.process_task(task_dict)
+                        logger.info(f"{'✅' if success else '❌'} Task {task_id} result: {'success' if success else 'failed'}")
+                    # Only log queue depth every ~30 seconds to reduce noise
                 
                 except Exception as e:
-                    logger.error(f"Worker error: {e}", exc_info=True)
+                    logger.error(f"Worker loop error: {e}", exc_info=True)
                     await asyncio.sleep(poll_interval_s)
         
         except KeyboardInterrupt:

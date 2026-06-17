@@ -94,8 +94,12 @@ async def init_async_db():
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Async database initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize async database: {e}")
-        raise
+        # Ignore operational errors when tables are already created (fixes multi-worker startup race conditions in SQLite)
+        if "already exists" in str(e):
+            logger.info("Async database tables already created by another worker process, skipping creation.")
+        else:
+            logger.error(f"Failed to initialize async database: {e}")
+            raise
 
 def init_sync_db():
     """Initialize sync database (create tables)."""
