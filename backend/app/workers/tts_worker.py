@@ -3,6 +3,7 @@ import asyncio
 import logging
 import sys
 import os
+import json
 from asyncio import Semaphore
 from typing import Optional
 import signal
@@ -78,7 +79,7 @@ class TTSWorkerPool:
                             processing_time_ms=int((datetime.utcnow() - start_time).total_seconds() * 1000),
                             created_at=datetime.utcnow()
                         )
-                        await RedisClient.set_result(f"tts_result:{task.task_id}", result.dict())
+                        await RedisClient.set_result(f"tts_result:{task.task_id}", json.loads(result.model_dump_json()))
                         return False
                 
                 processing_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -97,7 +98,7 @@ class TTSWorkerPool:
                     attempt=task.attempt
                 )
                 
-                await RedisClient.set_result(f"tts_result:{task.task_id}", result.dict())
+                await RedisClient.set_result(f"tts_result:{task.task_id}", json.loads(result.model_dump_json()))
                 logger.info(f"Task {task.task_id} completed in {processing_time_ms}ms")
                 
                 self.tasks_processed += 1
