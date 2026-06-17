@@ -15,8 +15,10 @@ Base = declarative_base()
 # Create async engine with asyncpg for production use
 
 if DATABASE_URL.startswith("sqlite"):
+    # Convert sqlite:// to sqlite+aiosqlite:// for async support
+    async_db_url = DATABASE_URL.replace("sqlite://", "sqlite+aiosqlite:///")
     async_engine = create_async_engine(
-        DATABASE_URL,
+        async_db_url,
         echo=True,
     )
 else:
