@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.config import PORT
-from app.database import Base, engine, get_db
+from app.db import Base, engine, get_db
 from app.models import Session as SessionModel, Interaction as InteractionModel
 from app.schemas import (
     StartSessionRequest, StartSessionResponse,

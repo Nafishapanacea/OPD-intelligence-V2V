@@ -53,11 +53,11 @@ class TTSService:
         """Return the absolute path to the reference audio for the given language."""
         lang = language.lower()
         if "hindi" in lang:
-            return r"C:\Users\Acer\Downloads\hindi_ref.mp3"
+            return "/home/omen/Documents/Nafisha/OPD-intelligence-V2V/backend/app/reference_audio/hindi_ref.mp3"
         if "marathi" in lang:
-            return r"C:\Users\Acer\Downloads\marathi_ref.wav"
+            return "/home/omen/Documents/Nafisha/OPD-intelligence-V2V/backend/app/reference_audio/marathi_ref.wav"
         # Default to English reference
-        return r"C:\Users\Acer\Downloads\eng_ref.mp3"
+        return "/home/omen/Documents/Nafisha/OPD-intelligence-V2V/backend/app/reference_audio/eng_ref.mp3"
 
     @staticmethod
     def generate_speech(text: str, language: str) -> tuple:

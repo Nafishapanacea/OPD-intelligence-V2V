@@ -18,7 +18,7 @@ from app.config import (
     PORT, HOST, WORKERS, CORS_ORIGINS, LOG_LEVEL, 
     TTS_QUEUE_MAX_DEPTH, LOG_LEVEL
 )
-from app.database import AsyncSessionLocal, init_async_db, get_async_db
+from app.db import AsyncSessionLocal, init_async_db, get_async_db
 from app.models import Session as SessionModel, Interaction as InteractionModel, AuditLog
 from app.schemas import (
     StartSessionRequest, StartSessionResponse,
